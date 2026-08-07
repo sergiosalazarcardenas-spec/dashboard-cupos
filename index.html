@@ -33,6 +33,8 @@
     .filter-path { color:#52768b; font-size:11px; line-height:1.45; margin:4px 0 14px; }
     .filter-group { margin:0 0 12px; }
     .filter-group > label, .filter-label { display:block; font-size:11px; font-weight:750; letter-spacing:.055em; text-transform:uppercase; color:#5b6c78; margin:0 0 5px; }
+    .date-range { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .date-range label { display:block; color:#647783; font-size:11px; font-weight:700; margin:0 0 5px; }
     select, input[type="search"] { width:100%; appearance:auto; border:1px solid #cbd8e0; background:#fff; color:#1c2c39; border-radius:8px; padding:9px 10px; outline:none; }
     select:focus, input[type="search"]:focus { border-color:#4b91c6; box-shadow:0 0 0 3px rgba(61,136,190,.15); }
     .caretype-search { margin-bottom:7px; font-size:12px; }
@@ -118,9 +120,9 @@
         </section>
         <section class="panel" aria-labelledby="filter-title">
           <div class="filter-action"><h2 class="panel-title" id="filter-title" style="margin:0">⌘ Filtros</h2><button class="link-button" id="reset-filters" type="button">Limpiar</button></div>
-          <p class="filter-path">Ruta dependiente: Estado del cupo → Fecha → Estamento → Profesional → Sector → Tipo de atención.</p>
+          <p class="filter-path">Ruta dependiente: Estado del cupo → Rango de fechas → Estamento → Profesional → Sector → Tipo de atención.</p>
           <div class="filter-group"><label for="filter-status">Estado del cupo</label><select id="filter-status"><option value="">Todos los estados</option></select></div>
-          <div class="filter-group"><label for="filter-date">Fecha</label><select id="filter-date"><option value="from-today">Desde hoy en adelante</option></select></div>
+          <div class="filter-group"><p class="filter-label">Rango de fechas</p><div class="date-range"><div><label for="filter-date-from">Desde</label><select id="filter-date-from"><option value="from-today">Hoy en adelante</option></select></div><div><label for="filter-date-to">Hasta</label><select id="filter-date-to"><option value="">Última fecha disponible</option></select></div></div></div>
           <div class="filter-group"><label for="filter-instrument">Estamento</label><select id="filter-instrument"><option value="">Todos los estamentos</option></select></div>
           <div class="filter-group"><label for="filter-professional">Profesional</label><select id="filter-professional"><option value="">Todos los profesionales</option></select></div>
           <div class="filter-group"><label for="filter-sector">Sector</label><select id="filter-sector"><option value="">Todos los sectores</option></select></div>
@@ -182,7 +184,8 @@
     const GOOGLE_SHEETS_CSV_URL = String(window.DASHBOARD_CONFIG?.googleSheetsCsvUrl || '').trim();
     const FILTERS = [
       { field: 'status', id: 'filter-status', all: 'Todos los estados' },
-      { field: 'date', id: 'filter-date', all: 'Desde hoy en adelante', format: formatDate, defaultValue: 'from-today' },
+      { field: 'dateFrom', id: 'filter-date-from', all: 'Hoy en adelante', format: formatDate, defaultValue: 'from-today' },
+      { field: 'dateTo', id: 'filter-date-to', all: 'Última fecha disponible', format: formatDate },
       { field: 'instrument', id: 'filter-instrument', all: 'Todos los estamentos' },
       { field: 'professional', id: 'filter-professional', all: 'Todos los profesionales' },
       { field: 'sector', id: 'filter-sector', all: 'Todos los sectores' },
@@ -312,7 +315,8 @@
         const value = criteria[field];
         if (Array.isArray(value)) return value.length === 0 || value.includes(row[field]);
         if (!value) return true;
-        if (field === 'date' && value === 'from-today') return row.date >= todayKey();
+        if (field === 'dateFrom') return row.date >= (value === 'from-today' ? todayKey() : value);
+        if (field === 'dateTo') return row.date <= value;
         return row[field] === value;
       });
     }
@@ -327,8 +331,8 @@
         const control = $(filter.id); const current = criteria[filter.field];
         const previousFields = FILTERS.slice(0, index).map(item => item.field);
         const values = [...new Set(rawData.filter(row => matches(row, criteria, previousFields)).map(row => row[filter.field]))]
-          .filter(value => filter.field !== 'date' || value >= todayKey())
-          .sort((a,b) => filter.field === 'date' ? a.localeCompare(b) : a.localeCompare(b, 'es'));
+          .filter(value => !['dateFrom', 'dateTo'].includes(filter.field) || value >= todayKey())
+          .sort((a,b) => ['dateFrom', 'dateTo'].includes(filter.field) ? a.localeCompare(b) : a.localeCompare(b, 'es'));
         if (filter.multiple) {
           const selected = new Set(current);
           control.innerHTML = values.length
@@ -388,8 +392,8 @@
         : openRate >= .25
           ? { key: 'moderate', title: 'Disponibilidad moderada', message: 'Conviene focalizar la oferta disponible en los sectores, horarios y prestaciones con mayor capacidad.' }
           : { key: 'low', title: 'Disponibilidad baja', message: 'La agenda habilitada presenta poca capacidad abierta; revise bloqueos y habilite oferta si corresponde.' };
-      const dateFilter = $('filter-date').value;
-      const referenceDate = dateFilter && dateFilter !== 'from-today' ? dateFilter : todayKey();
+      const dateFrom = $('filter-date-from').value;
+      const referenceDate = dateFrom && dateFrom !== 'from-today' ? dateFrom : todayKey();
       const dailyAvailable = rows.filter(row => row.status === 'DISPONIBLE').reduce((map, row) => map.set(row.date, (map.get(row.date) || 0) + number(row.slots)), new Map());
       const sectorAvailable = rows.filter(row => row.status === 'DISPONIBLE').reduce((map, row) => map.set(row.sector, (map.get(row.sector) || 0) + number(row.slots)), new Map());
       const bestDate = sortedCounts(dailyAvailable, 1)[0];
@@ -413,7 +417,7 @@
     function renderChips() {
       const criteria = selectValues(); const selected = FILTERS.filter(filter => Array.isArray(criteria[filter.field]) ? criteria[filter.field].length : criteria[filter.field]); const query = plain($('filter-search').value);
       const chips = selected.map(filter => {
-        const label = filter.multiple ? (criteria[filter.field].length === 1 ? `Tipo: ${criteria[filter.field][0]}` : `Tipos de atención: ${criteria[filter.field].length}`) : filter.field === 'date' ? (criteria[filter.field] === 'from-today' ? 'Desde hoy en adelante' : formatDate(criteria[filter.field])) : criteria[filter.field];
+        const label = filter.multiple ? (criteria[filter.field].length === 1 ? `Tipo: ${criteria[filter.field][0]}` : `Tipos de atención: ${criteria[filter.field].length}`) : filter.field === 'dateFrom' ? (criteria[filter.field] === 'from-today' ? 'Desde hoy en adelante' : `Desde ${formatDate(criteria[filter.field])}`) : filter.field === 'dateTo' ? `Hasta ${formatDate(criteria[filter.field])}` : criteria[filter.field];
         const clearButton = criteria[filter.field] === filter.defaultValue ? '' : `<button type="button" data-clear="${filter.field}" aria-label="Quitar filtro">×</button>`;
         return `<span class="chip">${escapeHTML(label)}${clearButton}</span>`;
       });
