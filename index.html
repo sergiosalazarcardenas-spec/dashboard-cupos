@@ -330,7 +330,8 @@
       FILTERS.forEach((filter, index) => {
         const control = $(filter.id); const current = criteria[filter.field];
         const previousFields = FILTERS.slice(0, index).map(item => item.field);
-        const values = [...new Set(rawData.filter(row => matches(row, criteria, previousFields)).map(row => row[filter.field]))]
+        const sourceField = ['dateFrom', 'dateTo'].includes(filter.field) ? 'date' : filter.field;
+        const values = [...new Set(rawData.filter(row => matches(row, criteria, previousFields)).map(row => row[sourceField]))]
           .filter(value => !['dateFrom', 'dateTo'].includes(filter.field) || value >= todayKey())
           .sort((a,b) => ['dateFrom', 'dateTo'].includes(filter.field) ? a.localeCompare(b) : a.localeCompare(b, 'es'));
         if (filter.multiple) {
